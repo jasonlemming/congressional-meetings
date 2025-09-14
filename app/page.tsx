@@ -3,7 +3,7 @@
 import { useMeetings } from '@/hooks/useMeetings';
 import { useFilters } from '@/hooks/useFilters';
 import { Filters } from '@/components/Filters';
-import { MeetingsTable } from '@/components/MeetingsTable';
+import MeetingsTable from '@/components/MeetingsTable';
 
 export default function HomePage() {
   const { meetings, loading, error } = useMeetings();

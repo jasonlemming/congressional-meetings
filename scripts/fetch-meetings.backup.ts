@@ -1,4 +1,4 @@
-/* scripts/fetch-meetings.ts */
+/* unified House + Senate fetcher — with official_title + colloquial_title and expanded House week range */
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -18,7 +18,7 @@ const parser = new XMLParser({
 const norm = (s?: string | null) => (s ?? "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
 const first = (...vals: (string | undefined)[]) => vals.find(v => norm(v) !== "") || "";
 
-/* ---------- generic helpers ---------- */
+/* ---------- helpers ---------- */
 function extractText(v: any): string {
   if (v == null) return "";
   if (typeof v === "string" || typeof v === "number") return String(v);
@@ -45,14 +45,16 @@ function deepFind(obj: any, keys: string[]): string | undefined {
 }
 
 async function httpGet(url: string): Promise<string> {
-  const res = await fetch(url, { headers: { "User-Agent": "congressional-meetings/1.9" } });
+  const res = await fetch(url, { headers: { "User-Agent": "congressional-meetings/1.8" } });
   if (!res.ok) throw new Error(`GET ${url} -> ${res.status} ${res.statusText}`);
   return res.text();
 }
 
+/* Generate a short, human-friendly colloquial title from the official one */
 function summarizeTitle(official: string, committee: string, meetingType: string) {
-  const src = norm(official).replace(/\.$/, "");
+  const src = norm(official).replace(/\s+/g, " ").replace(/\.$/, "");
   if (!src) return norm(`${committee || "Hearing"} ${meetingType || ""}`.trim());
+
   if (/^Business meeting to consider the nomination/i.test(src)) return "Business meeting: nominations";
   if (/^Business meeting to consider/i.test(src)) {
     const rest = src.replace(/^Business meeting to consider\s+/i, "");
@@ -72,7 +74,9 @@ function summarizeTitle(official: string, committee: string, meetingType: string
   }
   const commaCount = (src.match(/,/g) || []).length;
   if (commaCount >= 8 && /nomination/i.test(src)) return "Nominations hearing";
-  return src.length > 140 ? src.slice(0, 120).trim() + "…" : src;
+
+  const short = src.length > 140 ? src.slice(0, 120).trim() + "…" : src;
+  return short;
 }
 
 /* ---------- HOUSE ---------- */
@@ -87,6 +91,7 @@ function fmtWeekOf(d: Date) {
   const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
   return `${toMMDDYYYY(sun)}_${toMMDDYYYY(sat)}`;
 }
+
 async function getHouseEventIdsForWeek(weekStart: Date): Promise<string[]> {
   const html = await httpGet(HOUSE_WEEK_BASE + fmtWeekOf(weekStart));
   const $ = cheerio.load(html);
@@ -109,30 +114,17 @@ async function getHouseXmlUrlFromEvent(eventId: string): Promise<string | undefi
   if (href.startsWith("/")) return "https://docs.house.gov" + href;
 }
 
-/** Parse from the House XML (preferred) */
 function mapHouseFromXmlObj(obj: any, fb: { eventId: string; detailUrl: string }) {
-  const meeting_id = first(
-    deepFind(obj, ["EventID","eventID","EventId","Id"]),
-    fb.eventId
-  );
-  const official_title = first(
-    deepFind(obj, ["HearingTitle","OfficialTitle","MeetingTitle","Title","Subject","HearingTitleText","HearingSubject"]),
-  );
-  const date = first(
-    deepFind(obj, ["HearingDate","MeetingDate","Date","MeetingDateText","StartDate"])
-  );
-  const time = first(
-    deepFind(obj, ["Time","StartTime","MeetingTime","HearingTime"])
-  );
-  const location = first(
-    deepFind(obj, ["Location","Room","Place","MeetingRoom"])
-  );
-  const committee = first(
-    deepFind(obj, ["CommitteeFullName","CommitteeFullNameText","CommitteeName","CommitteeTitle","Committee","committee","committeeName"])
-  );
-  const meeting_type = first(
-    deepFind(obj, ["MeetingType","Type"])
-  ) || "Hearing";
+  const meeting_id = first(deepFind(obj, ["EventID","eventID","EventId","Id"]), fb.eventId);
+  const official_title =
+    deepFind(obj, ["HearingTitle","MeetingTitle","Title","Subject","MainTitle","HearingTitleText"]) || "";
+  const date = deepFind(obj, ["HearingDate","MeetingDate","Date","MeetingDateText"]);
+  const time = deepFind(obj, ["Time","StartTime","MeetingTime","HearingTime"]);
+  const location = deepFind(obj, ["Location","Room","Place"]);
+  const committee =
+    deepFind(obj, ["CommitteeFullName","CommitteeName","CommitteeTitle","Committee"]) ||
+    deepFind(obj, ["Name"]);
+  const meeting_type = deepFind(obj, ["MeetingType","Type"]) || "Hearing";
 
   return {
     congress: 118,
@@ -157,13 +149,11 @@ function mapHouseFromXmlObj(obj: any, fb: { eventId: string; detailUrl: string }
   };
 }
 
-/** Parse from HTML (fallback) with stricter committee detection */
 function mapHouseFromHtml(html: string, fb: { eventId: string; detailUrl: string }) {
   const $ = cheerio.load(html);
-
-  const root = $('#ContentPlaceHolder1_pnlMeeting, #ContentPlaceHolder1_UpdatePanel1, #ContentPlaceHolder1_MeetingDetails').first().length
-    ? $('#ContentPlaceHolder1_pnlMeeting, #ContentPlaceHolder1_UpdatePanel1, #ContentPlaceHolder1_MeetingDetails').first()
-    : $('body');
+  const root =
+    $('#ContentPlaceHolder1_pnlMeeting, #ContentPlaceHolder1_UpdatePanel1, #ContentPlaceHolder1_MeetingDetails')
+      .first().length ? $('#ContentPlaceHolder1_pnlMeeting, #ContentPlaceHolder1_UpdatePanel1, #ContentPlaceHolder1_MeetingDetails').first() : $('body');
 
   const official_title =
     norm(
@@ -173,13 +163,23 @@ function mapHouseFromHtml(html: string, fb: { eventId: string; detailUrl: string
       $("title").text()
     );
 
-  // Only accept true committee-like phrases; exclude download/package/visit blocks
-  const bad = /(Download|Package|Visit)/i;
-  const committee =
-    root.find('a, div, p, span, small, i, em')
-      .map((_, el) => norm($(el).text()))
-      .get()
-      .find(t => /^(Committee|Subcommittee)\s+on\s+/i.test(t) && !bad.test(t)) || "";
+  let committee = "";
+  const h1 = root.find("h1").first();
+  if (h1.length) {
+    const candidate = h1.nextAll("div, p, span, small, i, em")
+      .map((_, el) => norm($(el).text())).get()
+      .find(t => /\b(Committee|Subcommittee)\b/i.test(t) && t.length < 120 &&
+        !/Bills this Week|Office of the Clerk|Majority Leader/i.test(t));
+    if (candidate) committee = candidate;
+  }
+  if (!committee) {
+    committee = norm(root.find("div, p, span, small, i, em")
+      .filter((_, el) => {
+        const t = norm($(el).text());
+        return /\b(Committee|Subcommittee)\b/i.test(t) && t.length < 120 &&
+          !/Bills this Week|Office of the Clerk|Majority Leader/i.test(t);
+      }).first().text());
+  }
 
   const topText = norm(root.text().split("Witnesses")[0] || root.text());
   const dt = topText.match(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}(?:\s*\(([^)]+)\))?/i);
@@ -224,6 +224,8 @@ function mapHouseFromHtml(html: string, fb: { eventId: string; detailUrl: string
 async function fetchHouse(): Promise<any[]> {
   const today = new Date();
   const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 7);
+
+  // NEW: broaden range — prev week, this week, next week, week+2
   const prevWeek = new Date(today); prevWeek.setDate(today.getDate() - 7);
   const week2 = new Date(nextWeek); week2.setDate(nextWeek.getDate() + 7);
   const weeks = [prevWeek, today, nextWeek, week2];
@@ -252,7 +254,7 @@ async function fetchHouse(): Promise<any[]> {
           mapped = mapHouseFromXmlObj(obj, { eventId: id, detailUrl });
         }
       } catch {}
-      if (!mapped || !(mapped.official_title && mapped.committee_name)) {
+      if (!mapped || !(mapped.official_title && mapped.date && mapped.committee_name)) {
         const html = await httpGet(detailUrl);
         const htmlMapped = mapHouseFromHtml(html, { eventId: id, detailUrl });
         mapped = { ...(mapped ?? {}), ...htmlMapped, meeting_id: String(id), detail_page_url: detailUrl };
@@ -270,6 +272,25 @@ async function fetchHouse(): Promise<any[]> {
 const SENATE_FEED = "https://www.senate.gov/general/committee_schedules/hearings.xml";
 const SENATE_DEFAULT_URL = "https://www.senate.gov/committees/hearings_meetings.htm";
 
+const SENATE_CODE_MAP: Record<string, string> = {
+  AGING:"Special Committee on Aging", AGRI:"Committee on Agriculture, Nutrition, and Forestry",
+  APPR:"Committee on Appropriations", ARMED:"Committee on Armed Services",
+  BANK:"Committee on Banking, Housing, and Urban Affairs", BUDG:"Committee on the Budget",
+  COMMERCE:"Committee on Commerce, Science, and Transportation",
+  ENERGY:"Committee on Energy and Natural Resources", EPW:"Committee on Environment and Public Works",
+  FIN:"Committee on Finance", FOREIGN:"Committee on Foreign Relations",
+  HELP:"Committee on Health, Education, Labor, and Pensions",
+  HSGAC:"Committee on Homeland Security and Governmental Affairs",
+  INTEL:"Select Committee on Intelligence", INDIAN:"Committee on Indian Affairs",
+  JUD:"Committee on the Judiciary", RULES:"Committee on Rules and Administration",
+  SMALL:"Committee on Small Business and Entrepreneurship", VETS:"Committee on Veterans' Affairs",
+};
+const normalizeCode = (s?: string) => (s || "").toUpperCase().replace(/[^A-Z]/g, "");
+function nameFromCode(code?: string): string | undefined {
+  const key = normalizeCode(code); if (!key) return;
+  if (SENATE_CODE_MAP[key]) return SENATE_CODE_MAP[key];
+  for (const k of Object.keys(SENATE_CODE_MAP)) if (key.includes(k)) return SENATE_CODE_MAP[k];
+}
 function parseSenateDate(d?: string, iso?: string) {
   if (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
     const dt = new Date(iso + "T00:00:00Z");
@@ -284,9 +305,12 @@ function parseSenateDate(d?: string, iso?: string) {
   }
   return "";
 }
-
-function summarizeTitleForSenate(official: string, committee: string, meetingType: string) {
-  return summarizeTitle(official, committee, meetingType);
+function detailedFallbackTitle(m: any, mtgType: string, committee_name: string, cmte_code?: string) {
+  const subcommittee = first(deepFind(m, ["subcommittee","Subcommittee","subcmte","sub_cmte","subcmte_name"]), "");
+  const header = subcommittee
+    ? `${subcommittee}${committee_name && !subcommittee.includes(committee_name) ? ` (${committee_name})` : ""}`
+    : (committee_name || nameFromCode(cmte_code) || "");
+  return header ? `${header} ${mtgType}` : `Senate ${mtgType}`;
 }
 
 async function fetchSenate(): Promise<any[]> {
@@ -304,27 +328,29 @@ async function fetchSenate(): Promise<any[]> {
 
   const out = candidates.map((m, idx) => {
     const cmte_code = deepFind(m, ["cmte_code"]);
-    let committee_name = first(
-      deepFind(m, ["committee","committeeName","Committee","CommitteeName"])
-    );
+    let committee_name = deepFind(m, ["committee","committeeName","Committee","CommitteeName"]) || "";
+    if (!committee_name) committee_name = nameFromCode(cmte_code) || "";
+
     const official_title = first(
       deepFind(m, ["matter","Matter"]),
       deepFind(m, ["topic","Topic"]),
       deepFind(m, ["subject","Subject","title","Title"]),
       deepFind(m, ["summary","Summary","description","Description"])
     );
+
     const date_iso = deepFind(m, ["date_iso_8601"]);
     const date_raw = deepFind(m, ["date","hearingDate"]);
     const date = parseSenateDate(date_raw, date_iso);
     const time = first(deepFind(m, ["time","time_et","start_time","hearing_time","Time"])) || "";
     const location = first(deepFind(m, ["room","Room","location","Location","building"])) || "";
     const mtgType = first(deepFind(m, ["meetingType","type","Type"])) || "Hearing";
-    const link = first(deepFind(m, ["url","meetingURL","link"])) || SENATE_DEFAULT_URL;
-    const title_or_subject = norm(official_title) || norm(`${committee_name} ${mtgType}`.trim());
-    const colloquial_title = summarizeTitleForSenate(title_or_subject, committee_name, mtgType);
+    const link = first(deepFind(m, ["url","meetingURL","link"]), SENATE_DEFAULT_URL);
+    const title_or_subject = norm(official_title) || norm(detailedFallbackTitle(m, mtgType, committee_name, cmte_code));
+    const colloquial_title = summarizeTitle(title_or_subject, committee_name, mtgType);
+
     const meeting_id = first(
       deepFind(m, ["identifier","meetingID","MeetingID","id","guid"]),
-      (date_iso || date_raw || "") + "-" + (committee_name || `m${idx+1}`)
+      (date_iso || date_raw || "") + "-" + (normalizeCode(cmte_code) || committee_name || `m${idx+1}`)
     );
 
     return {
@@ -332,10 +358,12 @@ async function fetchSenate(): Promise<any[]> {
       meeting_type: mtgType,
       official_title: title_or_subject,
       colloquial_title,
-      title_or_subject,
+      title_or_subject, // backward compat
       date: norm(date), start_time: norm(time), location: norm(location),
       status: "", committee_name: norm(committee_name),
       detail_page_url: norm(link), video_url: "",
+      transcript_url: undefined, witnesses: undefined, testimony_urls: undefined,
+      related_legislation: undefined, notes: undefined,
     };
   })
   .filter(m => !/^No committee hearings scheduled$/i.test(m.official_title));

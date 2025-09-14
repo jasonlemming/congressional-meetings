@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { useEffect, useState } from "react";
 
@@ -9,12 +9,7 @@ export type Meeting = {
   meeting_type?: string;
   chamber?: "house" | "senate";
   committee_name?: string;
-  // NEW:
-  official_title?: string;
-  colloquial_title?: string;
-  // kept for backward compat with existing UI:
   title_or_subject?: string;
-
   date?: string;
   start_time?: string;
   location?: string;
@@ -28,7 +23,8 @@ export type Meeting = {
   notes?: string;
 };
 
-type FetchResponse = { updated_at?: string; count?: number; meetings?: Meeting[] } | Meeting[];
+type Wrapped = { updated_at?: string; count?: number; meetings?: Meeting[] };
+type FetchResponse = Wrapped | Meeting[];
 
 export function useMeetings() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -39,28 +35,24 @@ export function useMeetings() {
   useEffect(() => {
     (async () => {
       try {
-        // Try API route first
-        const res = await fetch('/api/meetings', { cache: 'no-store' });
-        let data: FetchResponse;
-        if (res.ok) {
-          data = await res.json();
-        } else {
-          // Fallback to static file
-          const res2 = await fetch('/meetings.json', { cache: 'no-store' });
-          data = await res2.json();
-        }
+        let res = await fetch("/api/meetings", { cache: "no-store" });
+        if (!res.ok) res = await fetch("/meetings.json", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-        const arr = Array.isArray(data) ? data : (data.meetings || []);
-        const metaInfo = Array.isArray(data) ? {} : { updated_at: data.updated_at, count: data.count };
-        setMeetings(arr);
-        setMeta(metaInfo);
+        const data: FetchResponse = await res.json();
+
+        const rows = Array.isArray(data) ? data : Array.isArray(data.meetings) ? data.meetings : [];
+        setMeetings(rows);
+
+        if (!Array.isArray(data)) setMeta({ updated_at: data.updated_at, count: data.count });
       } catch (e: any) {
-        setError(e?.message || 'Failed to load meetings');
+        setError(e?.message ?? "Failed to load meetings");
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  return { meetings, meta, loading, error };
+  return { meetings, loading, error, meta };
 }
+

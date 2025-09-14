@@ -34,7 +34,7 @@ export default function HomePage() {
         </h1>
         <p style={{ fontSize: '1.1rem', color: '#666', maxWidth: '600px', margin: '0.5rem 0 0 0' }}>
           Upcoming U.S. House and Senate committee hearings, markups, and business meetings.
-          Data sourced from docs.house.gov, senate.gov, and congress.gov.
+          Data sourced from senate.gov and congress.gov.
         </p>
       </header>
 
@@ -47,12 +47,29 @@ export default function HomePage() {
 
       <MeetingsTable meetings={filteredMeetings} />
 
-      <footer style={{ marginTop: '3rem', paddingTop: '2rem', borderTop: '1px solid #e2e8f0', textAlign: 'center', color: '#666' }}>
-        <p style={{ margin: '0 0 0.5rem 0' }}>
-          Last updated: {meetings.length > 0 ? new Date(Math.max(...meetings.map(m => new Date(m.last_seen_at).getTime()))).toLocaleString('en-US', { timeZone: 'America/New_York' }) + ' ET' : 'Unknown'}
+      <footer style={{ 
+        marginTop: '3rem', 
+        paddingTop: '2rem', 
+        borderTop: '1px solid #e2e8f0', 
+        textAlign: 'center', 
+        color: '#666',
+        backgroundColor: '#e3f2fd',
+        padding: '1rem',
+        borderRadius: '8px'
+      }}>
+        <p style={{ margin: '0 0 0.5rem 0', fontWeight: 'bold' }}>
+          🔄 Site Updated: {new Date().toLocaleString('en-US', { 
+            timeZone: 'America/New_York',
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            timeZoneName: 'short'
+          })}
         </p>
         <p style={{ margin: 0, fontSize: '0.9rem' }}>
-          Times displayed in Eastern Time. Click meeting titles to view official pages.
+          Showing {meetings.length} meetings • Data auto-refreshes every 45 minutes
         </p>
       </footer>
     </main>

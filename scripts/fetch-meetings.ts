@@ -96,7 +96,13 @@ async function getHouseEventIdsForWeek(weekStart: Date): Promise<string[]> {
     const m = href.match(/EventID=(\d{5,})/);
     if (m) ids.add(m[1]);
   });
-  for (const m of html.matchAll(/EventID=(\d{5,})/g)) ids.add(m[1]);
+  {
+    const re = /EventID=(\d{5,})/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) !== null) {
+      ids.add(m[1]);
+    }
+  }
   return [...ids];
 }
 async function getHouseXmlUrlFromEvent(eventId: string): Promise<string | undefined> {

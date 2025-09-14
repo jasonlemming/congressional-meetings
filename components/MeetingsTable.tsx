@@ -3,7 +3,7 @@
 import * as React from 'react';
 import type { Meeting } from '@/hooks/useMeetings';
 
-type SortKey = 'datetime' | 'chamber' | 'title' | 'location';
+type SortKey = 'datetime' | 'chamber' | 'title' | 'committee';
 type SortDir = 'asc' | 'desc';
 
 function toDateTime(m: Meeting) {
@@ -21,12 +21,20 @@ export default function MeetingsTable({ meetings }: { meetings: Meeting[] }) {
     arr.sort((a, b) => {
       let va: any = 0, vb: any = 0;
       switch (sortKey) {
-        case 'datetime': va = toDateTime(a); vb = toDateTime(b); break;
-        case 'chamber':  va = (a.chamber || '').localeCompare(b.chamber || ''); break;
-        case 'title':    va = (a.official_title || a.title_or_subject || '').localeCompare(b.official_title || b.title_or_subject || ''); break;
-        case 'location': va = (a.location || '').localeCompare(b.location || ''); break;
+        case 'datetime':
+          va = toDateTime(a); vb = toDateTime(b); break;
+        case 'chamber':
+          va = (a.chamber || '').localeCompare(b.chamber || ''); break;
+        case 'title':
+          va = (a.official_title || a.title_or_subject || '')
+                .localeCompare(b.official_title || b.title_or_subject || '');
+          break;
+        case 'committee':
+          va = (a.committee_name || '').localeCompare(b.committee_name || ''); break;
       }
-      return sortDir === 'asc' ? (va > vb ? 1 : va < vb ? -1 : 0) : (va < vb ? 1 : va > vb ? -1 : 0);
+      return sortDir === 'asc'
+        ? (va > vb ? 1 : va < vb ? -1 : 0)
+        : (va < vb ? 1 : va > vb ? -1 : 0);
     });
     return arr;
   }, [meetings, sortKey, sortDir]);
@@ -44,7 +52,7 @@ export default function MeetingsTable({ meetings }: { meetings: Meeting[] }) {
             <Th onClick={() => clickSort('datetime')} active={sortKey === 'datetime'} dir={sortDir}>Date / Time</Th>
             <Th onClick={() => clickSort('chamber')} active={sortKey === 'chamber'} dir={sortDir}>Chamber</Th>
             <Th onClick={() => clickSort('title')} active={sortKey === 'title'} dir={sortDir}>Title</Th>
-            <Th onClick={() => clickSort('location')} active={sortKey === 'location'} dir={sortDir}>Location</Th>
+            <Th onClick={() => clickSort('committee')} active={sortKey === 'committee'} dir={sortDir}>Committee</Th>
             <th style={{ textAlign: 'left', padding: '12px 16px', fontSize: 12, color: '#4a5568' }}>Details</th>
           </tr>
         </thead>
@@ -64,13 +72,9 @@ export default function MeetingsTable({ meetings }: { meetings: Meeting[] }) {
                     {m.colloquial_title}
                   </div>
                 )}
-                {m.committee_name && (
-                  <div style={{ fontSize: 12, color: '#718096', marginTop: 4 }}>
-                    {m.committee_name}
-                  </div>
-                )}
+                {/* Removed the small committee line here to avoid duplication */}
               </td>
-              <td style={td}>{m.location || '—'}</td>
+              <td style={td}>{m.committee_name || '—'}</td>
               <td style={td}>
                 <a href={m.detail_page_url || '#'} target="_blank" rel="noreferrer" style={{ color: '#3182ce', textDecoration: 'underline' }}>Open</a>
               </td>

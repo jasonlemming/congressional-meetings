@@ -216,7 +216,7 @@ function mapHouseFromHtml(html: string, fb: { eventId: string; detailUrl: string
     start_time: time,
     location,
     status: undefined,
-    committee_name: (committee || extractCommitteeFromTitle(official_title || title_or_subject || "")),
+    committee_name: (committee || extractCommitteeFromTitle(official_title || "")),
     detail_page_url: fb.detailUrl,
     video_url: undefined,
     transcript_url: undefined,
@@ -327,7 +327,7 @@ async function fetchSenate(): Promise<any[]> {
     const mtgType = first(deepFind(m, ["meetingType","type","Type"])) || "Hearing";
     const link = first(deepFind(m, ["url","meetingURL","link"])) || SENATE_DEFAULT_URL;
     const title_or_subject = norm(official_title) || norm(`${committee_name} ${mtgType}`.trim());
-    const colloquial_title = summarizeTitleForSenate(title_or_subject, committee_name: (committee_name || extractCommitteeFromTitle(official_title || title_or_subject || "")), mtgType);
+    const colloquial_title = summarizeTitleForSenate(title_or_subject, committee_name: (committee_name || extractCommitteeFromTitle(official_title || "")), mtgType);
     const meeting_id = first(
       deepFind(m, ["identifier","meetingID","MeetingID","id","guid"]),
       (date_iso || date_raw || "") + "-" + (committee_name || `m${idx+1}`)

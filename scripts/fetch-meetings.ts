@@ -216,7 +216,7 @@ function mapHouseFromHtml(html: string, fb: { eventId: string; detailUrl: string
     start_time: time,
     location,
     status: undefined,
-    committee_name: committee,
+    committee_name: (committee || extractCommitteeFromTitle(official_title || title || "")),
     detail_page_url: fb.detailUrl,
     video_url: undefined,
     transcript_url: undefined,
@@ -327,7 +327,7 @@ async function fetchSenate(): Promise<any[]> {
     const mtgType = first(deepFind(m, ["meetingType","type","Type"])) || "Hearing";
     const link = first(deepFind(m, ["url","meetingURL","link"])) || SENATE_DEFAULT_URL;
     const title_or_subject = norm(official_title) || norm(`${committee_name} ${mtgType}`.trim());
-    const colloquial_title = summarizeTitleForSenate(title_or_subject, committee_name, mtgType);
+    const colloquial_title = summarizeTitleForSenate(title_or_subject, committee_name: (committee_name || extractCommitteeFromTitle(official_title || title || "")), mtgType);
     const meeting_id = first(
       deepFind(m, ["identifier","meetingID","MeetingID","id","guid"]),
       (date_iso || date_raw || "") + "-" + (committee_name || `m${idx+1}`)
@@ -367,3 +367,14 @@ async function main() {
   console.log("📝 Wrote:", join(__dirname, "..", "public", "meetings.json"));
 }
 main().catch(err => { console.error("❌ Top-level error", err); process.exit(1); });
+
+function extractCommitteeFromTitle(t: string): string | undefined {
+  if (!t) return undefined;
+  // "(Committee on XYZ)" pattern
+  const m1 = t.match(/(s*Committee on ([^)]+))/i);
+  if (m1) return "Committee on " + m1[1].trim();
+  // tail pattern: ", Committee on XYZ" or " - Committee on XYZ"
+  const m2 = t.match(/(?:^|[,–-])s*Committee on ([^,]+)s*$/i);
+  if (m2) return "Committee on " + m2[1].trim();
+  return undefined;
+}

@@ -50,8 +50,8 @@ async function httpGet(url: string): Promise<string> {
   return res.text();
 }
 
-function summarizeTitle(official: string, committee: string, meetingType: string) {
-  const src = norm(official).replace(/\.$/, "");
+function summarizeTitle(official?: string, committee?: string, meetingType?: string) {
+  const src = norm(official || "").replace(/\.$/, "");
   if (!src) return norm(`${committee || "Hearing"} ${meetingType || ""}`.trim());
   if (/^Business meeting to consider the nomination/i.test(src)) return "Business meeting: nominations";
   if (/^Business meeting to consider/i.test(src)) {
@@ -291,7 +291,7 @@ function parseSenateDate(d?: string, iso?: string) {
   return "";
 }
 
-function summarizeTitleForSenate(official: string, committee: string, meetingType: string) {
+function summarizeTitleForSenate(official?: string, committee?: string, meetingType?: string) {
   return summarizeTitle(official, committee, meetingType);
 }
 
